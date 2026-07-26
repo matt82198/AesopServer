@@ -1,0 +1,18 @@
+spring:
+  application:
+    name: AesopServer-Test
+
+server:
+  port: 8871
+
+aesop:
+  brain:
+    aesop-root: "C:\\Users\\matt8\\aesop"
+    conductor-root: "C:\\Users\\matt8\\conductor3"
+  db-path: ""
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
