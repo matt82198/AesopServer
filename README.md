@@ -294,7 +294,16 @@ source.addEventListener('fleet', (e) => {
 
 This service is shaped for its use case and does not pretend beyond it.
 
-**Read-only by design.** AesopServer observes; it does not write tracker mutations. A future phase (J4, not yet scheduled) will add an inbox-mediated write path, preserving single-writer discipline on the Python side. For now, this is a pure observer.
+**Writes are proposals, not mutations.** Reads are open; the J4 write path never touches tracker.json, STATE.md, or the SQLite store directly — it appends typed request lines to the orchestrator's inbox (fsync'd, append-only, one JSON object per line) and returns `202 Accepted`. The Python orchestrator remains the single writer and applies transitions asynchronously.
+
+### J4 write endpoints
+
+| Endpoint | Auth | Semantics |
+|---|---|---|
+| `POST /api/v1/tracker/items/{id}/transitions` | Bearer token | Validates against the projected item state, appends a `tracker-transition` inbox line, returns 202 |
+| `POST /api/v1/inbox` | Bearer token | Generic typed note to the orchestrator, returns 202 |
+
+Auth: static bearer token via `AESOP_SERVER_TOKEN` (constant-time compare). **Fail-closed:** if the token is unset, write endpoints return 503 and the server is a pure observer. Single-box scope; TLS termination is out of scope.
 
 **Single-box scope.** The jar and Docker image are designed to run on the operator's box or a container on the same machine, with the aesop brain directory mounted read-only. Cloud deployment claims are NOT made; the SQLite WAL gotcha (below) makes multi-machine scenarios complex.
 
@@ -335,7 +344,7 @@ Soak test: Verifies 150+ concurrent reads on WAL database with zero stale-data i
 ## Next Steps
 
 - **J3 (in progress)**: AesopDashboard module — server-rendered Thymeleaf shell with vanilla-JS hydration from J2's SSE stream.
-- **J4 (scheduled)**: Typed write endpoints — inbox-mediated tracker mutations, preserving the single-writer contract.
+- **J4 (shipped)**: Typed write endpoints — inbox-mediated transition proposals with fail-closed bearer auth; single-writer contract preserved.
 
 ---
 
