@@ -10,6 +10,8 @@ aesop:
     aesop-root: "./test-fixtures/aesop"
     conductor-root: "./test-fixtures/conductor3"
   db-path: ""
+  inbox-path: "./test-inbox.jsonl"
+  server-token: "test-secret-token"
 
 management:
   endpoints:
