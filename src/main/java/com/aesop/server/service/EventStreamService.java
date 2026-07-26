@@ -151,4 +151,11 @@ public class EventStreamService {
     public int getConnectedClientCount() {
         return emitters.size();
     }
+
+    /**
+     * Get a specific tracker item by ID (for transition validation).
+     */
+    public com.aesop.server.dto.TrackerItem getTrackerItemById(String itemId) {
+        return eventStoreReader.getTrackerItemById(itemId);
+    }
 }

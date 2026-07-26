@@ -171,6 +171,20 @@ public class EventStoreReader {
     }
 
     /**
+     * Get a specific tracker item by ID from the projected state.
+     * Returns null if the item is not found.
+     */
+    public TrackerItem getTrackerItemById(String itemId) {
+        TrackerSnapshot snapshot = projectTracker();
+        for (TrackerItem item : snapshot.items()) {
+            if (item.id().equals(itemId)) {
+                return item;
+            }
+        }
+        return null;
+    }
+
+    /**
      * Project tracker state from events in the "tracker" stream.
      * Folds item_created, item_updated, item_archived events into current state.
      */
