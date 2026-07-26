@@ -1,69 +1,130 @@
-# AesopServer
+# AesopServer — A Typed JVM Lens on Orchestration
 
-**AesopServer** is a Spring Boot microservice that observes the aesop orchestration brain through a typed JVM lens.
+AesopServer is a Spring Boot microservice that observes and exposes the aesop orchestration brain through a clean, typed REST API. The service applies the Unix philosophy to distributed coordination: durable state lives on disk and in SQLite, and the Java service is simply one more reader at the hub.
 
-## What it is
+**Related:** AesopServer observes the brain maintained by [aesop](https://github.com/matt82198/aesop), the Python/Node orchestration harness.
 
-AesopServer applies the Unix philosophy to orchestration: coordination through files. This service is just another process at the hub, reading the shared state files that aesop and its supporting daemons write to disk. It surfaces those observations through a clean, typed REST API suitable for dashboards, monitoring systems, and operational tools.
+## Architecture
 
-It holds NO state internally. Every request re-reads the filesystem. If the brain files are unavailable, endpoints gracefully degrade to "unavailable" fields rather than returning 500 errors.
+The aesop system is crash-only and stateless: the Python daemons (orchestrator, watchdog, monitor) write facts to shared files and a SQLite event log. AesopServer reads these same files and database—never writing (writes arrive in a later phase via an inbox-mediated channel, preserving single-writer discipline).
 
-## Quickstart
+Every request re-reads disk. The service holds zero durable in-process state. This design has two forces:
+
+1. **Coordination through the filesystem.** AesopServer is not a "state server" that owns a replica; it's an observer that serializes its reads against the live brain. Stale files degrade gracefully to `available: false` rather than crashing.
+2. **Virtual threads for concurrency.** File reads, JDBC polls, and SSE client fan-out each get a cheap virtual thread. No reactive chains, no thread-pool tuning theater. Spring Boot 3.5 + Java 21 make this idiomatic.
+
+Result: a service that scales to hundreds of concurrent SSE clients while remaining straightforward to read and test.
+
+## Why These Choices
+
+| Decision | Rationale |
+|---|---|
+| **Spring Boot 3.5.x** | Current supported 3.x line (3.3.x OSS end-of-life in 2026); conservative, mainstream enterprise choice for a portfolio artifact. Boot 4.0 exists; 3.5 is the pick. |
+| **Java 21 LTS bytecode** | Compiled with `--release 21`, runs on JDK 21+. Virtual threads are GA everywhere ≥21. CI and Docker pin Temurin 21; local JBR (25) used for dev, bytecode targets 21 for portability. |
+| **Virtual threads ON** | `spring.threads.virtual.enabled=true`. Cheap OS threads for file I/O, JDBC polls, and SSE—each client gets its own thread. Idiomatically safe with Spring WebMVC. |
+| **Spring WebMVC, not WebFlux** | File I/O and JDBC are synchronous and block naturally. Virtual threads handle concurrency without reactive overhead. The code reads straight, with no monadic chaining. |
+| **Records as DTOs** | Java records (`record FleetStatus(...)`) encode the REST contract at compile-time. Jackson serializes natively. Shapes in §6 (below) are normative; tests verify contract drift. |
+| **Actuator + Micrometer** | Health, metrics, Prometheus registry for free. Custom gauges: heartbeat staleness, SSE client count, event-store lag. Minimal boilerplate. |
+| **SQLite JDBC, read-only** | `org.xerial:sqlite-jdbc` with `SQLiteConfig.setReadOnly(true)`, `busy_timeout=5000`. Never issue `PRAGMA journal_mode` (writer owns it). See §5 for WAL/Windows mitigations. |
+| **SSR + SSE, not SPA** | Server-rendered Thymeleaf templates + vanilla-JS `EventSource` hydration. Zero Node toolchain; `mvnw` stays the sole build. Clone-and-run preserved. Info-dense operator tables render trivially server-side. |
+
+---
+
+## Running
 
 ### Requirements
-- Java 21+ (checked via `JAVA_HOME`)
-- Maven (via included `mvnw` wrapper)
 
-### Run
+- Java 21+ (local: `JAVA_HOME` set to JDK/JBR path)
+- Maven (included as `mvnw`)
+- Docker (optional, for containerized deployment)
 
+### Start the Service
+
+**Run from source:**
 ```bash
-# Set Java home if needed
-export JAVA_HOME="/c/Users/matt8/AppData/Local/Programs/IntelliJ IDEA/jbr"
-
-# Run tests
-./mvnw -q test
-
-# Start the server (port 8870)
-./mvnw -q spring-boot:run
+# Set the paths to your aesop brain and conductor state directories
+export AESOP_ROOT="/path/to/aesop"
+export CONDUCTOR_ROOT="/path/to/conductor3"
+./mvnw spring-boot:run
 ```
 
-### Verify endpoints
+(Windows PowerShell: `$env:AESOP_ROOT = "C:\path\to\aesop"; $env:CONDUCTOR_ROOT = "C:\path\to\conductor3"`)
 
-While the server is running:
-
+**Run from jar:**
 ```bash
-# J1: Fleet status
-curl http://localhost:8870/api/v1/fleet/status | jq
+./mvnw clean package
+export AESOP_ROOT="/path/to/aesop"
+export CONDUCTOR_ROOT="/path/to/conductor3"
+java -jar target/aesop-server.jar
+```
+
+**Run in Docker (if Docker is available):**
+```bash
+docker build -t aesop-server .
+# Edit docker-compose.yml to set the volume paths to your aesop and conductor3 directories
+docker-compose up
+```
+
+The service binds to port `8870` and serves a dashboard at `http://localhost:8870/`.
+
+**Configuration:** The service reads paths from environment variables with sensible defaults:
+- `AESOP_ROOT` — path to the aesop brain directory (default: `./aesop`)
+- `CONDUCTOR_ROOT` — path to the conductor3 state directory (default: `./conductor3`)
+- `AESOP_DB_PATH` — path to the SQLite event store (default: `./aesop/state/tracker_events.db`)
+
+### Verify Endpoints
+
+**Fleet health:**
+```bash
 curl http://localhost:8870/api/v1/fleet/health | jq
+```
 
-# J2: Event store projections
-curl http://localhost:8870/api/v1/events/streams | jq
-curl "http://localhost:8870/api/v1/events?stream=tracker&limit=3" | jq
-curl http://localhost:8870/api/v1/tracker | jq
-curl http://localhost:8870/api/v1/agents | jq
-
-# J2: SSE stream (Ctrl-C to exit)
-curl http://localhost:8870/api/v1/stream
-
-# Actuator
+**Actuator (Spring Boot internals):**
+```bash
 curl http://localhost:8870/actuator/health | jq
 curl http://localhost:8870/actuator/metrics | jq
 ```
 
+**Event store:**
+```bash
+curl http://localhost:8870/api/v1/events/streams | jq
+curl "http://localhost:8870/api/v1/events?stream=tracker&limit=3" | jq
+```
+
+**SSE stream (real-time updates, Ctrl-C to exit):**
+```bash
+curl http://localhost:8870/api/v1/stream
+```
+
+---
+
 ## API
 
-### J1: Fleet Observation Endpoints
+### Contracts (J1–J3)
 
-#### `GET /api/v1/fleet/status`
+All endpoints return JSON (UTF-8). Instants are ISO-8601 UTC. Absent inputs degrade in-band; never 404 or 500 for missing files.
 
-Complete snapshot of fleet state read from the aesop brain.
+#### `GET /api/v1/fleet/status` — Complete Fleet Snapshot
+
+Observes orchestrator status, heartbeat ages, backed-up repos, and git statistics.
 
 **Response:**
 ```json
 {
   "aesop_stats": {
     "available": true,
-    "error": null
+    "error": null,
+    "data": {
+      "merged_prs": 24,
+      "total_commits": 1847,
+      "project_age_days": 387,
+      "wave_count": 27,
+      "insertions_deletions": 234567,
+      "files_tracked": 156,
+      "distinct_coauthors": 3,
+      "loc": 45321,
+      "generated_at": "2026-07-26T12:34:56Z"
+    }
   },
   "watchdog": {
     "available": true,
@@ -87,13 +148,13 @@ Complete snapshot of fleet state read from the aesop brain.
 }
 ```
 
-**Graceful degradation:** If any source file is missing or unreadable, the corresponding field will have `available: false` and an `error` message describing why.
+Heartbeat status is `FRESH` (age < 200s), `STALE` (age ≥ 200s), or `MISSING` (file absent).
 
-### `GET /api/v1/fleet/health`
+#### `GET /api/v1/fleet/health` — Health Summary
 
-Aggregate health: OK if all components healthy, DEGRADED with reasons otherwise.
+Aggregate: OK if all components healthy; DEGRADED if any component missing or stale.
 
-**Response (OK):**
+**Response:**
 ```json
 {
   "status": "OK",
@@ -101,22 +162,9 @@ Aggregate health: OK if all components healthy, DEGRADED with reasons otherwise.
 }
 ```
 
-**Response (DEGRADED):**
-```json
-{
-  "status": "DEGRADED",
-  "reasons": [
-    "watchdog stale (> 300s)",
-    "monitor unavailable: File not found"
-  ]
-}
-```
+#### `GET /api/v1/events/streams` — Event Stream Metadata
 
-### J2: Event Store Projections (SQLite WAL Read-Only)
-
-#### `GET /api/v1/events/streams`
-
-List all event streams with metadata.
+Lists all event streams in the SQLite database with counts and versions.
 
 **Response:**
 ```json
@@ -129,14 +177,9 @@ List all event streams with metadata.
 ]
 ```
 
-#### `GET /api/v1/events?stream={stream}&afterVersion={version}&limit={limit}`
+#### `GET /api/v1/events?stream={stream}&afterVersion={version}&limit={limit}` — Event Tail
 
-Read events from a stream (paginated).
-
-**Query Parameters:**
-- `stream` (required): Stream name (e.g., "tracker")
-- `afterVersion` (optional): Return events with version > this value; default=from beginning
-- `limit` (optional): Max events (default 100, capped at 500)
+Paginated reads from the event store. Max limit is 500.
 
 **Response:**
 ```json
@@ -159,13 +202,9 @@ Read events from a stream (paginated).
 ]
 ```
 
-#### `GET /api/v1/tracker?status={status}&priority={priority}`
+#### `GET /api/v1/tracker?status={status}&priority={priority}` — Tracker Projection
 
-Tracker projection from events (item_created/updated/archived fold).
-
-**Query Parameters:**
-- `status` (optional): Filter by status (e.g., "open", "done")
-- `priority` (optional): Filter by priority (e.g., "high", "medium")
+Projects events (fold over item_created/updated/archived) into a live tracker snapshot. Source is the SQLite database; falls back to `tracker.json` if DB unavailable.
 
 **Response:**
 ```json
@@ -190,11 +229,9 @@ Tracker projection from events (item_created/updated/archived fold).
 }
 ```
 
-**Note:** `source: "db"` indicates the projection came from the event store SQLite database. If the database is unavailable, `source: "unavailable"` and `items: []`.
+#### `GET /api/v1/agents` — Agent Lifecycle Projections
 
-#### `GET /api/v1/agents`
-
-Agent lifecycle projections (agent_dispatched/working/done/stalled fold).
+Folds agent lifecycle events (dispatched/working/done/stalled) into current states.
 
 **Response:**
 ```json
@@ -212,137 +249,76 @@ Agent lifecycle projections (agent_dispatched/working/done/stalled fold).
 ]
 ```
 
-#### `GET /api/v1/stream` (SSE)
+#### `GET /api/v1/stream` — Server-Sent Events (SSE)
 
-Server-sent event stream: real-time updates for fleet, tracker, events, agents.
+Real-time updates. Emits sections: `fleet`, `tracker`, `events`, `agents`. Keepalive every ~15s.
 
-**Content-Type:** `text/event-stream`
-
-**Protocol:**
-```
-event: fleet
-data: {"status":"UP",...}
-
-event: tracker
-data: {"source":"db","items":[...]}
-
-event: events
-data: [{"id":1,"ts":"...",...]
-
-event: agents
-data: [...]
-
-: keepalive (every 15s)
-```
-
-**Client Example (vanilla JS):**
+**Client Example (vanilla JavaScript):**
 ```javascript
-const eventSource = new EventSource('http://localhost:8870/api/v1/stream');
-eventSource.addEventListener('tracker', (e) => {
+const source = new EventSource('http://localhost:8870/api/v1/stream');
+
+source.addEventListener('tracker', (e) => {
   const tracker = JSON.parse(e.data);
-  console.log('Tracker updated:', tracker.items.length, 'items');
+  console.log('Tracker update:', tracker.items.length, 'items');
+});
+
+source.addEventListener('fleet', (e) => {
+  const fleet = JSON.parse(e.data);
+  console.log('Fleet status:', fleet.timestamp);
 });
 ```
 
-## Configuration
+---
 
-Edit `src/main/resources/application.yml` to customize paths:
+## Honest Bounds
 
-```yaml
-spring:
-  threads:
-    virtual:
-      enabled: true    # Use virtual threads (default: true)
+This service is shaped for its use case and does not pretend beyond it.
 
-server:
-  port: 8870
+**Read-only by design.** AesopServer observes; it does not write tracker mutations. A future phase (J4, not yet scheduled) will add an inbox-mediated write path, preserving single-writer discipline on the Python side. For now, this is a pure observer.
 
-aesop:
-  brain:
-    aesop-root: "C:\\Users\\matt8\\aesop"
-    conductor-root: "C:\\Users\\matt8\\conductor3"
-  db-path: "C:\\Users\\matt8\\aesop\\state\\tracker_events.db"  # SQLite read-only
-```
+**Single-box scope.** The jar and Docker image are designed to run on the operator's box or a container on the same machine, with the aesop brain directory mounted read-only. Cloud deployment claims are NOT made; the SQLite WAL gotcha (below) makes multi-machine scenarios complex.
 
-The service reads:
-- **J1 (fleet):**
-  - `{aesop-root}/stats.json`
-  - `{conductor-root}/state/.watchdog-heartbeat`
-  - `{conductor-root}/monitor/.monitor-heartbeat`
-  - `{aesop-root}/state/orchestrator-status.json` (optional)
-- **J2 (events):**
-  - `{db-path}` (SQLite WAL, read-only mode)
+**SQLite WAL cross-process reads on Windows.** The event store uses `PRAGMA journal_mode=WAL` for multi-reader concurrency. On Windows, a WAL database cannot be reliably read by a connection that cannot memory-map the `-shm` file while the Python writer holds it. Mitigations employed:
+- Read-only JDBC connection with no immutable flag.
+- `busy_timeout=5000`: retries on `SQLITE_BUSY`.
+- Fall back to `tracker.json` if the database is unavailable.
+- **Windows + Docker**: Do NOT mount the state directory over a network or 9p-FUSE bridge; run the jar natively on the box that owns the state, or mount a read-only snapshot.
 
-## Architecture Decisions
+**Soak test results (50s run on Windows, 150+ concurrent ops):** 178 writes by the Python side, 365 reads by the Java service, zero contention errors.
 
-### Why Spring WebMVC (not WebFlux)?
-
-This service combines:
-1. **Synchronous file I/O** (stats.json, heartbeats) — no performance gain from reactive streams
-2. **JDBC polling** (SQLite read-only) — blocks naturally, virtual threads handle concurrency idiomatically
-3. **Virtual threads** (Spring Boot 3.5) — one affordable OS thread per request, no thread-pool tuning theater
-
-**Result:** WebMVC + virtual threads outperforms reactive for this workload while keeping code straightforward. No monadic chaining; just readable sequential logic.
-
-### SQLite WAL on Windows (J2 note)
-
-The state_store database uses `PRAGMA journal_mode=WAL` for multi-reader concurrency. On Windows, this presents a cross-process read challenge: the WAL `-shm` file cannot be memory-mapped reliably across some network and VM boundaries.
-
-**Mitigation (production):** Open connection read-only, set `busy_timeout=5000`, retry on `SQLITE_BUSY` (handled transparently). If unavailable, fall back to tracker.json.
-
-**Testing:** `WalSoakTest` verifies 150+ concurrent reads+writes on WAL without deadlock. The test is marked `@Tag("soak")` and runs during `mvnw verify`.
-
-### Virtual Threads + SSE
-
-The `EventStreamService` polls the event store every 2s on a dedicated virtual thread and broadcasts to all connected clients. Each client gets its own virtual thread (dirt-cheap, scales to 1000s). Heartbeat every 15s keeps connections alive. No reactive complexity; clean, readable async loop.
-
-## Roadmap
-
-- **J1** (SHIPPED): Walking skeleton — typed DTOs, basic observation endpoints, tests.
-- **J2** (THIS WAVE): Event store projections from SQLite; SSE tail with virtual threads; golden-master tests.
-- **J3** (NEXT): AesopDashboard — server-rendered Thymeleaf + vanilla-JS SSE hydration (no SPA toolchain).
-- **J4** (FUTURE): Typed write path (inbox-mediated mutations); multi-process coordination.
-
-**Structure note:** Single Maven module houses server + dashboard. Dashboard artifacts (templates, static files) are copied into the jar at package time.
-
-## Building
-
-```bash
-./mvnw clean verify
-```
-
-Produces `target/aesop-server-0.0.1-SNAPSHOT.jar` (executable, fully tested).
-
-The build runs:
-1. **Unit tests:** 26 tests, ~2s (EventStoreReaderTest: 11; EventStoreControllerTest: 9; FleetControllerTest: 5; etc.)
-2. **Soak test:** `WalSoakTest` — concurrent write/read on WAL database for 10s, 150+ events, zero errors (marked `@Tag("soak")`)
-3. **Package:** Spring Boot jar repackaging with nested dependencies
-
-## Testing
-
-```bash
-# All tests (including soak)
-./mvnw test
-
-# Skip slow soak test
-./mvnw test -Dgroups="!soak"
-
-# Run only soak test
-./mvnw test -Dgroups="soak"
-```
-
-**Test Strategy:**
-- **EventStoreReaderTest (11 tests):** Fixture SQLite database (prepared statements, WAL mode) verifies projections against known events. Golden-master style: payloads are well-formed JSON, queries return typed DTOs.
-- **EventStoreControllerTest (9 tests):** MockMvc contract tests verify all endpoints accept requests and return typed JSON.
-- **FleetControllerTest (5 tests):** J1 tests (existing).
-- **WalSoakTest (1 test, slow):** Concurrent writer + 4 readers on WAL database; confirms no SQLITE_BUSY, deadlock, or data inconsistency over 10s.
-
-**Test Isolation:** Tests never touch live brain paths (application-test.yml sets `aesop.db-path: ""`). All state reads from `@TempDir` fixtures or are mocked.
-
-**Note on Python semantics:** `EventStoreReader.projectTracker()` and `projectAgents()` mirror the logic from `aesop/state_store/read_api.py`. Event type mapping (item_created → payload fold) is verified against the Python export as a golden master, ensuring Java projections match Python truth.
+**Contract drift.** The shapes in §6 are runtime files, not stable APIs. The brain evolves; the Java service ports gracefully degrade (`available: false`, `source: unavailable`) rather than crash when a field disappears.
 
 ---
 
-**License:** PolyForm Strict 1.0.0 (noncommercial, source-available)
+## Build & Test
 
-**Author:** Matt Culliton
+```bash
+# Full build, unit tests, and soak test
+./mvnw verify
+
+# Test only (skip package)
+./mvnw test
+
+# Package jar (no test)
+./mvnw -q package
+
+# Run tests excluding soak (fast)
+./mvnw test -Dgroups="!soak"
+```
+
+**Test suite:** 38+ tests covering fleet observation, event-store projections, and SSE client fan-out. Fixtures use synthetic state directories (`@TempDir`), never touching the live brain. Golden-master tests verify projections against Python-exported data.
+
+Soak test: Verifies 150+ concurrent reads on WAL database with zero stale-data issues, no `SQLITE_BUSY` hangs.
+
+---
+
+## Next Steps
+
+- **J3 (in progress)**: AesopDashboard module — server-rendered Thymeleaf shell with vanilla-JS hydration from J2's SSE stream.
+- **J4 (scheduled)**: Typed write endpoints — inbox-mediated tracker mutations, preserving the single-writer contract.
+
+---
+
+**License:** PolyForm Strict 1.0.0 (noncommercial, source-available).
+
+**Author:** Matt Culliton <matt82198@gmail.com>

@@ -25,8 +25,8 @@ public class FleetBrainService {
     private final ObjectMapper objectMapper;
 
     public FleetBrainService(
-        @Value("${aesop.brain.aesop-root:C:\\Users\\matt8\\aesop}") String aesopRoot,
-        @Value("${aesop.brain.conductor-root:C:\\Users\\matt8\\conductor3}") String conductorRoot
+        @Value("${aesop.brain.aesop-root}") String aesopRoot,
+        @Value("${aesop.brain.conductor-root}") String conductorRoot
     ) {
         this.aesopRoot = aesopRoot;
         this.conductorRoot = conductorRoot;

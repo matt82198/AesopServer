@@ -7,8 +7,8 @@ server:
 
 aesop:
   brain:
-    aesop-root: "C:\\Users\\matt8\\aesop"
-    conductor-root: "C:\\Users\\matt8\\conductor3"
+    aesop-root: "./test-fixtures/aesop"
+    conductor-root: "./test-fixtures/conductor3"
   db-path: ""
 
 management:

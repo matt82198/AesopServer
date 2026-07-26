@@ -12,19 +12,24 @@
 	<artifactId>aesop-server</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
 	<name>AesopServer</name>
-	<description>Aesop orchestration brain observer</description>
-	<url/>
+	<description>Aesop orchestration brain observer - Spring Boot microservice</description>
+	<url>https://github.com/matt82198/AesopServer</url>
 	<licenses>
-		<license/>
+		<license>
+			<name>PolyForm Strict License 1.0.0</name>
+			<url>https://polyformproject.org/licenses/strict/1.0.0/</url>
+		</license>
 	</licenses>
 	<developers>
-		<developer/>
+		<developer>
+			<name>Matt Culliton</name>
+			<email>matt82198@gmail.com</email>
+		</developer>
 	</developers>
 	<scm>
-		<connection/>
-		<developerConnection/>
-		<tag/>
-		<url/>
+		<connection>scm:git:https://github.com/matt82198/AesopServer.git</connection>
+		<developerConnection>scm:git:https://github.com/matt82198/AesopServer.git</developerConnection>
+		<url>https://github.com/matt82198/AesopServer</url>
 	</scm>
 	<properties>
 		<java.version>21</java.version>
@@ -70,10 +75,16 @@
 	</dependencies>
 
 	<build>
+		<finalName>aesop-server</finalName>
 		<plugins>
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+				<configuration>
+					<layers>
+						<enabled>true</enabled>
+					</layers>
+				</configuration>
 			</plugin>
 		</plugins>
 	</build>
