@@ -13,6 +13,8 @@ aesop:
     aesop-root: "${AESOP_ROOT:./aesop}"
     conductor-root: "${CONDUCTOR_ROOT:./conductor3}"
   db-path: "${AESOP_DB_PATH:./aesop/state/tracker_events.db}"
+  inbox-path: "${AESOP_INBOX_PATH:}"
+  server-token: "${AESOP_SERVER_TOKEN:}"
 
 management:
   endpoints:
