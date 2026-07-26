@@ -15,9 +15,11 @@ services:
       SPRING_THREADS_VIRTUAL_ENABLED: "true"
     volumes:
       # Mount the aesop brain directory (read-only)
-      - /c/Users/matt8/aesop:/aesop:ro
+      # Set LOCAL_AESOP_PATH to your local aesop directory
+      - ${LOCAL_AESOP_PATH:./aesop}:/aesop:ro
       # Mount the conductor3 state directory (read-only)
-      - /c/Users/matt8/conductor3:/conductor:ro
+      # Set LOCAL_CONDUCTOR_PATH to your local conductor3 directory
+      - ${LOCAL_CONDUCTOR_PATH:./conductor3}:/conductor:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8870/actuator/health"]
       interval: 30s

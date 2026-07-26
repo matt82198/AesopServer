@@ -1,0 +1,36 @@
+name: Verify
+
+on:
+  push:
+    branches: [main, master, feat/*, fix/*]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+      - name: Run tests
+        run: ./mvnw -q verify
+      - name: Package jar
+        run: ./mvnw -q package -DskipTests
+      - name: Verify jar exists
+        run: |
+          if [ -f target/aesop-server.jar ]; then
+            echo "JAR created successfully"
+            ls -lh target/aesop-server.jar
+          else
+            echo "JAR not found!"
+            exit 1
+          fi
+        shell: bash

@@ -61,9 +61,19 @@ java -jar target/aesop-server.jar
 **Run in Docker (if Docker is available):**
 ```bash
 docker build -t aesop-server .
-# Edit docker-compose.yml to set the volume paths to your aesop and conductor3 directories
+# Set local paths to your aesop and conductor3 directories, then start
+export LOCAL_AESOP_PATH="/path/to/aesop"
+export LOCAL_CONDUCTOR_PATH="/path/to/conductor3"
 docker-compose up
 ```
+(Windows PowerShell: `$env:LOCAL_AESOP_PATH = "C:\path\to\aesop"; $env:LOCAL_CONDUCTOR_PATH = "C:\path\to\conductor3"`)
+
+Alternatively, edit `.env.local` (git-ignored):
+```
+LOCAL_AESOP_PATH=/path/to/aesop
+LOCAL_CONDUCTOR_PATH=/path/to/conductor3
+```
+Then `docker-compose up` reads these automatically.
 
 The service binds to port `8870` and serves a dashboard at `http://localhost:8870/`.
 
@@ -71,6 +81,16 @@ The service binds to port `8870` and serves a dashboard at `http://localhost:887
 - `AESOP_ROOT` — path to the aesop brain directory (default: `./aesop`)
 - `CONDUCTOR_ROOT` — path to the conductor3 state directory (default: `./conductor3`)
 - `AESOP_DB_PATH` — path to the SQLite event store (default: `./aesop/state/tracker_events.db`)
+
+For Docker deployments, `docker-compose.yml` uses:
+- `LOCAL_AESOP_PATH` — host path to aesop directory (default: `./aesop`)
+- `LOCAL_CONDUCTOR_PATH` — host path to conductor3 directory (default: `./conductor3`)
+
+Create `.env.local` (git-ignored) to persist these values across restarts:
+```
+LOCAL_AESOP_PATH=/path/to/aesop
+LOCAL_CONDUCTOR_PATH=/path/to/conductor3
+```
 
 ### Verify Endpoints
 

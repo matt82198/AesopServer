@@ -33,7 +33,7 @@ USER aesop
 
 # Health check: curl the actuator/health endpoint
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-  CMD java -version 2>&1 | grep -q "openjdk" || exit 1
+  CMD curl -f http://localhost:8870/actuator/health || exit 1
 
 EXPOSE 8870
 
