@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AesopDashboard</title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+</head>
+<body>
+<div class="dashboard-container">
+    <!-- Header -->
+    <header class="dashboard-header">
+        <h1>AesopDashboard</h1>
+        <div class="header-info">
+            <span id="live-indicator" class="live-indicator grey">⚫ disconnected</span>
+            <span class="generated-at" th:text="'Rendered: ' + ${#temporals.formatISO(generatedAt)}"></span>
+        </div>
+    </header>
+
+    <!-- Fleet Health Strip -->
+    <section class="fleet-strip">
+        <div class="strip-title">Fleet Status</div>
+        <div class="strip-items">
+            <!-- Watchdog Heartbeat -->
+            <div class="status-pill" th:classappend="${fleetStatus.watchdog.status == 'FRESH' ? 'fresh' : (fleetStatus.watchdog.status == 'STALE' ? 'stale' : 'missing')}">
+                <span class="label">watchdog</span>
+                <span class="age" th:text="${fleetStatus.watchdog.ageSeconds != null ? fleetStatus.watchdog.ageSeconds + 's' : 'missing'}"></span>
+            </div>
+
+            <!-- Monitor Heartbeat -->
+            <div class="status-pill" th:classappend="${fleetStatus.monitor.status == 'FRESH' ? 'fresh' : (fleetStatus.monitor.status == 'STALE' ? 'stale' : 'missing')}">
+                <span class="label">monitor</span>
+                <span class="age" th:text="${fleetStatus.monitor.ageSeconds != null ? fleetStatus.monitor.ageSeconds + 's' : 'missing'}"></span>
+            </div>
+
+            <!-- Orchestrator Phase -->
+            <div class="status-pill phase" th:with="orch=${fleetStatus?.orchestratorStatus}" th:if="${orch}">
+                <span class="label">phase</span>
+                <span class="value" th:text="${orch.phase}"></span>
+            </div>
+
+            <!-- Stats Headline -->
+            <div class="stats-headline" th:with="stats=${fleetStatus?.aesopStats}" th:if="${stats}">
+                <span th:text="${stats.totalCommits} + ' commits'"></span>
+                <span th:text="${stats.waveCount} + ' waves'"></span>
+                <span th:text="${stats.mergedPrs} + ' PRs'"></span>
+            </div>
+        </div>
+    </section>
+
+    <!-- Tracker Board -->
+    <section class="tracker-section">
+        <div class="section-header">
+            <h2>Tracker</h2>
+            <div class="counts">
+                <span class="count-badge" th:each="entry : ${statusCounts}">
+                    <span class="count-label" th:text="${entry.key}"></span>
+                    <span class="count-value" th:text="${entry.value}"></span>
+                </span>
+            </div>
+        </div>
+
+        <table class="tracker-table">
+            <thead>
+            <tr>
+                <th class="col-id">ID</th>
+                <th class="col-title">Title</th>
+                <th class="col-status">Status</th>
+                <th class="col-priority">Priority</th>
+                <th class="col-lane">Lane</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:each="item : ${tracker.items}" th:classappend="${'status-' + item.status}">
+                <td class="col-id" th:text="${item.id}"></td>
+                <td class="col-title" th:text="${item.title}"></td>
+                <td class="col-status" th:text="${item.status}"></td>
+                <td class="col-priority" th:text="${item.priority}"></td>
+                <td class="col-lane" th:text="${item.lane ?: '—'}"></td>
+            </tr>
+            </tbody>
+        </table>
+    </section>
+
+    <!-- Events Tail -->
+    <section class="events-section">
+        <div class="section-header">
+            <h2>Recent Events</h2>
+            <span class="event-count" th:text="'Last ' + ${recentEvents.size()} + ' events'"></span>
+        </div>
+
+        <table class="events-table">
+            <thead>
+            <tr>
+                <th class="col-time">Time (UTC)</th>
+                <th class="col-stream">Stream</th>
+                <th class="col-type">Type</th>
+                <th class="col-actor">Actor</th>
+                <th class="col-version">Ver</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:each="event : ${recentEvents}" th:classappend="${'type-' + event.type}">
+                <td class="col-time monospace" th:text="${#temporals.formatISO(event.ts).substring(11, 19)}"></td>
+                <td class="col-stream" th:text="${event.stream}"></td>
+                <td class="col-type" th:text="${event.type}"></td>
+                <td class="col-actor" th:text="${event.actor}"></td>
+                <td class="col-version monospace" th:text="${event.version}"></td>
+            </tr>
+            </tbody>
+        </table>
+    </section>
+
+    <!-- Agents Summary -->
+    <section class="agents-section">
+        <div class="section-header">
+            <h2>Agents</h2>
+            <span class="agent-count" th:text="${agents.size()} + ' active'"></span>
+        </div>
+
+        <div th:if="${agents.isEmpty()}" class="empty-state">
+            No agents currently running.
+        </div>
+
+        <table class="agents-table" th:if="${!agents.isEmpty()}">
+            <thead>
+            <tr>
+                <th class="col-agent-id">Agent ID</th>
+                <th class="col-state">State</th>
+                <th class="col-since">Since (UTC)</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:each="agent : ${agents}" th:classappend="${'state-' + agent.state}">
+                <td class="col-agent-id monospace" th:text="${agent.agentId}"></td>
+                <td class="col-state" th:text="${agent.state}"></td>
+                <td class="col-since monospace" th:text="${#temporals.formatISO(agent.since).substring(0, 19)}"></td>
+            </tr>
+            </tbody>
+        </table>
+    </section>
+
+</div>
+
+<script src="/js/dashboard.js"></script>
+</body>
+</html>
