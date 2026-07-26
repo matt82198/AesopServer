@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master, feat/** ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]
+        java-version: [ '21' ]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up JDK
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ matrix.java-version }}
+        distribution: 'temurin'
+        cache: maven
+
+    - name: Build and test
+      run: ./mvnw -q verify
+      shell: bash
+
+    - name: Package jar
+      run: ./mvnw -q package
+      shell: bash
+
+    - name: Verify jar exists
+      run: test -f target/aesop-server.jar
+      shell: bash

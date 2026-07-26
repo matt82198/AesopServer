@@ -10,9 +10,9 @@ server:
 
 aesop:
   brain:
-    aesop-root: "C:\\Users\\matt8\\aesop"
-    conductor-root: "C:\\Users\\matt8\\conductor3"
-  db-path: "C:\\Users\\matt8\\aesop\\state\\tracker_events.db"
+    aesop-root: "${AESOP_ROOT:./aesop}"
+    conductor-root: "${CONDUCTOR_ROOT:./conductor3}"
+  db-path: "${AESOP_DB_PATH:./aesop/state/tracker_events.db}"
 
 management:
   endpoints:

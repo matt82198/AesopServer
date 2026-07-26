@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  aesop-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aesop-server
+    ports:
+      - "8870:8870"
+    environment:
+      AESOP_ROOT: /aesop
+      CONDUCTOR_ROOT: /conductor
+      AESOP_DB_PATH: /aesop/state/tracker_events.db
+      SPRING_THREADS_VIRTUAL_ENABLED: "true"
+    volumes:
+      # Mount the aesop brain directory (read-only)
+      # Set LOCAL_AESOP_PATH to your local aesop directory
+      - ${LOCAL_AESOP_PATH:./aesop}:/aesop:ro
+      # Mount the conductor3 state directory (read-only)
+      # Set LOCAL_CONDUCTOR_PATH to your local conductor3 directory
+      - ${LOCAL_CONDUCTOR_PATH:./conductor3}:/conductor:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8870/actuator/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
